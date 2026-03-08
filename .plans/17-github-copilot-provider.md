@@ -1,7 +1,7 @@
 # Plan: GitHub Copilot Provider Integration
 
 ## TL;DR
-Add `"copilot"` as a second provider kind alongside Codex. GitHub Copilot CLI exposes an ACP (Agent Client Protocol) server via `copilot --acp --stdio` — NDJSON over stdio, the same transport pattern as `codex app-server`. This means the adapter architecture mirrors `CodexAppServerManager` almost exactly: spawn subprocess, wrap with `@agentclientprotocol/sdk`, map ACP events to canonical `ProviderRuntimeEvent`s. The agentic loop (tool execution, approval flows, conversation state) is handled by the `copilot` binary itself. Auth uses GitHub OAuth device flow (same as the Copilot CLI authenticates today). Target: full agentic coding parity with Codex.
+Add `"copilot"` as a second provider kind alongside Codex. GitHub Copilot CLI exposes an ACP (Agent Client Protocol) server via `copilot --acp --stdio` — NDJSON over stdio, the same transport pattern as `codex app-server`. This means the adapter architecture mirrors `CodexAppServerManager` almost exactly: spawn subprocess, wrap with `@agentclientprotocol/sdk`, map ACP events to canonical `ProviderRuntimeEvent`s. The agentic loop (tool execution, approval flows, conversation state) is handled by the `copilot` binary itself. Auth is assumed to be managed externally by the user's installed `gh` / Copilot CLI state. Target: full agentic coding parity with Codex.
 
 ---
 
@@ -19,22 +19,22 @@ Add `"copilot"` as a second provider kind alongside Codex. GitHub Copilot CLI ex
    - Add `REASONING_EFFORT_OPTIONS_BY_PROVIDER.copilot = []` and `DEFAULT_REASONING_EFFORT_BY_PROVIDER.copilot = null`
 
 3. In `packages/contracts/src/ws.ts`: add new WS method constants under `WS_METHODS`:
-   - `"copilot.auth.initiateDeviceFlow"` → returns `{ userCode, verificationUri, expiresIn, interval }`
+   - `"copilot.auth.initiateDeviceFlow"` → retained compatibility method; the server currently responds with a typed unsupported error because T3 Code does not own sign-in
    - `"copilot.auth.getStatus"` → returns `{ authenticated: boolean, login?: string }`
-   - `"copilot.auth.signOut"` → returns `void`
+   - `"copilot.auth.signOut"` → retained compatibility method; the server currently responds with a typed unsupported error because sign-out is managed externally
 
 ---
 
-## Phase 2: Auth Infrastructure — OAuth Device Flow
+## Phase 2: Auth Infrastructure — CLI-Owned Auth State
 *Depends on Phase 1. Can be developed in parallel with Phase 3.*
 
 4. Create `apps/server/src/copilotAuthManager.ts` (Effect service):
-   - `initiateDeviceFlow()`: POST `https://github.com/login/device/code` with `client_id` (hardcoded GitHub OAuth App client_id for t3code)
-   - `pollForAccessToken(deviceCode, interval)`: polls `https://github.com/login/oauth/access_token` until user authorizes or expires
-   - `getAccessToken()`: reads stored token from `{stateDir}/copilot-auth.json`
-   - `getStatus()`: returns `{ authenticated, login }` — fetches `https://api.github.com/user` to verify token
-   - `signOut()`: deletes `{stateDir}/copilot-auth.json`
-   - `getCopilotToken()`: exchanges GitHub access token for short-lived Copilot API token via `GET https://api.github.com/copilot_internal/v2/token` (auto-refresh when expired — tokens last ~5 min); cache in memory
+   - `initiateDeviceFlow()`: returns a typed unsupported error explaining that T3 Code does not own GitHub/Copilot sign-in
+   - `pollForAccessToken(deviceCode, interval)`: returns a typed unsupported error for the same reason
+   - `getAccessToken()`: shells out to `gh auth token`; returns `null` when the CLI is unauthenticated
+   - `getStatus()`: returns `{ authenticated, login }` from `gh auth status`
+   - `signOut()`: returns a typed unsupported error directing the user to `gh auth logout` / Copilot CLI auth management
+   - `getCopilotToken()`: exchanges the existing GitHub CLI access token for a short-lived Copilot API token via `GET https://api.github.com/copilot_internal/v2/token` (auto-refresh when expired — tokens last ~5 min); cache in memory
 
 5. Add WS handlers for the three auth methods in `apps/server/src/wsServer.ts`, routing to `CopilotAuthManager`.
 
@@ -119,10 +119,10 @@ Add `"copilot"` as a second provider kind alongside Codex. GitHub Copilot CLI ex
     - Add `{ value: "copilot", label: "GitHub Copilot", available: true }` to `PROVIDER_OPTIONS`
 
 13. Update `apps/web/src/routes/_chat.settings.tsx` (and possibly create a new settings section):
-    - Add "GitHub Copilot" settings section showing auth status (authenticated / not authenticated, GitHub login name)
-    - "Sign in with GitHub" button → calls `copilot.auth.initiateDeviceFlow` → shows `user_code` + link to `verification_uri` in a dialog
-    - Poll `copilot.auth.getStatus` every few seconds or show manual "I've authorized" confirmation
-    - "Sign out" button → calls `copilot.auth.signOut`
+   - Add "GitHub Copilot" settings section showing auth status (authenticated / not authenticated, GitHub login name)
+   - When unauthenticated, show clear guidance that auth must already exist in the user's `gh` / Copilot CLI environment; do not start a browser/device-flow from T3 Code
+   - Provide a refresh/recheck action around `copilot.auth.getStatus` so the UI can pick up external auth changes
+   - Do not show in-app sign-out unless the product explicitly wants to surface the unsupported-state message from `copilot.auth.signOut`
 
 14. Update `apps/web/src/nativeApi.ts` (or `wsNativeApi.ts`) to expose the three new auth WS methods via typed NativeApi wrappers.
 
@@ -133,7 +133,7 @@ Add `"copilot"` as a second provider kind alongside Codex. GitHub Copilot CLI ex
 ## Relevant Files
 
 **New files:**
-- `apps/server/src/copilotAuthManager.ts` — OAuth device flow, token storage, auth status
+- `apps/server/src/copilotAuthManager.ts` — CLI-auth status lookup (`gh auth status` / `gh auth token`), unsupported auth-management methods, Copilot token exchange/cache
 - `apps/server/src/copilotAcpManager.ts` — spawns `copilot --acp --stdio`, wraps `@agentclientprotocol/sdk`, maps ACP events to `ProviderEvent`s (mirrors `CodexAppServerManager`)
 - `apps/server/src/provider/Services/CopilotAdapter.ts` — service tag + shape type
 - `apps/server/src/provider/Layers/CopilotAdapter.ts` — full adapter implementation (mirrors `CodexAdapter`)
@@ -175,12 +175,14 @@ Each section maps to the phase it covers. All automated tests must live in the c
 ### Phase 2 — Auth Manager
 
 **Automated (`apps/server/src/copilotAuthManager.test.ts`):**
-- `getStatus()` returns `{ authenticated: false }` when no `copilot-auth.json` exists in `stateDir`
-- `signOut()` deletes `copilot-auth.json` when it exists; is a no-op (no error) when it does not
-- `getStatus()` returns `{ authenticated: false }` when `copilot-auth.json` contains a token that the mocked GitHub `/user` endpoint rejects with `401`
-- `getStatus()` returns `{ authenticated: true, login: "octocat" }` when the mocked GitHub `/user` endpoint returns `{ login: "octocat" }`
-- `initiateDeviceFlow()` makes a POST to `https://github.com/login/device/code` with the correct `client_id` and `scope` fields (mock the fetch)
-- `pollForAccessToken()` retries on `"authorization_pending"`, resolves on `"access_token"`, and rejects with a typed error on `"expired_token"`
+- `getStatus()` returns `{ authenticated: false }` when `gh auth status` reports no logged-in account
+- `getStatus()` returns `{ authenticated: true, login: "octocat" }` when `gh auth status` reports an active account
+- `getAccessToken()` returns the existing token from `gh auth token`
+- `getAccessToken()` returns a typed error when `gh` is missing from PATH
+- `initiateDeviceFlow()` fails with a typed unsupported error explaining auth must be managed outside T3 Code
+- `pollForAccessToken()` fails with a typed unsupported error explaining device flow is unsupported
+- `signOut()` fails with a typed unsupported error explaining sign-out must be managed outside T3 Code
+- `getCopilotToken()` exchanges the existing `gh` token and caches the Copilot token
 
 **WS handler smoke test (`apps/server/src/wsServer.test.ts`):**
 - `copilot.auth.getStatus` is a registered WS method (assert it appears in the method dispatch table)
@@ -253,9 +255,9 @@ Reuse `TestProviderAdapter` harness (or add a copilot-flavoured variant):
 
 **Manual checklist (required before marking Phase 6 done):**
 - [ ] Settings page shows a "GitHub Copilot" section
-- [ ] Clicking "Sign in with GitHub" renders a dialog with a `user_code` (e.g. `ABCD-1234`) and a clickable link to `https://github.com/login/device`
-- [ ] After authorizing in the browser, the settings section updates to show the authenticated GitHub username (without a page reload)
-- [ ] Clicking "Sign out" clears the auth status back to unauthenticated
+- [ ] When unauthenticated, settings show clear guidance that GitHub/Copilot auth must be completed outside T3 Code (for example with `gh auth login`)
+- [ ] After authenticating in the CLI, refreshing or re-checking status updates the settings section to show the authenticated GitHub username
+- [ ] No in-app device-flow or sign-out controls are shown unless the product intentionally wants them to surface unsupported-state messaging
 - [ ] Thread creation UI shows Copilot models (`gpt-4o`, `claude-3.5-sonnet`, `o3-mini`) in the model picker when provider `"copilot"` is selected
 - [ ] Selecting provider `"codex"` still shows only Codex models — no regression
 
@@ -284,8 +286,8 @@ Before marking the entire feature complete:
 ## Decisions
 
 - **Transport**: ACP over stdio (`copilot --acp --stdio`) via `@agentclientprotocol/sdk` — same pattern as `codex app-server`; the binary owns the agentic loop, tool execution, and conversation state
-- **Auth**: GitHub OAuth device flow — `CopilotAuthManager` stores the token in `{stateDir}/copilot-auth.json`; the `copilot` CLI reads its own auth state from `~/.config/gh/` (same as `gh` CLI); we do not need to inject a token into the subprocess
-- **Token storage**: `{stateDir}/copilot-auth.json` — server-side only, never sent to client; used solely to report auth status to the UI
+- **Auth**: CLI-owned GitHub auth state — `CopilotAuthManager` reads existing login state from `gh auth status` / `gh auth token`; T3 Code does not initiate OAuth itself and does not need a client ID
+- **Token storage**: No persisted GitHub token in T3 Code; only the short-lived Copilot token is cached in memory for exchange reuse
 - **Model selection**: Passed as part of `newSession()` options if ACP supports it, otherwise via prompt prefix; to be confirmed against ACP spec
 - **Model switch via restart**: `sessionModelSwitch: "restart-session"` — ACP sessions are per-process; model change requires a new subprocess spawn
 - **`rollbackThread`**: ACP does not expose a rollback API; store `turns: TurnId[]` in `runtimePayload` for bookkeeping; implement as kill + re-spawn with truncated history if ACP adds replay support later
@@ -295,7 +297,7 @@ Before marking the entire feature complete:
 
 ## Further Considerations
 
-1. **`copilot` CLI availability**: The user must have `copilot` CLI installed and authenticated (`gh auth login` or `copilot auth login`) before starting a session. The server should detect a missing binary and surface a clear error via `session.state.changed(error)` rather than crashing.
+1. **`copilot` CLI availability**: The user must have `copilot` CLI installed and already authenticated through their normal CLI workflow (`gh auth login` and/or Copilot CLI auth) before starting a session. The server should detect missing auth or a missing binary and surface a clear error rather than attempting to bootstrap login itself.
 2. **ACP `cancelPrompt`**: The ACP SDK may not yet expose a cancel/interrupt method (public preview). If absent, interrupt falls back to killing and restarting the process. Track the ACP changelog and add graceful cancel when available.
 3. **Session resume after server restart**: ACP sessions are in-process; there is no resume cursor like Codex's `threadId`. After a server restart, a new ACP process must be spawned. `resumeCursor` should store the last `sessionId` for logging but cannot be used to resume. The orchestration layer will show the session as `stopped` on reconnect, consistent with current behavior for other dead sessions.
 4. **Model list**: Confirm which models are exposed via ACP (the CLI may restrict to a subset of what `api.githubcopilot.com` offers). `MODEL_OPTIONS_BY_PROVIDER.copilot` should be kept in sync with what the ACP server actually accepts.

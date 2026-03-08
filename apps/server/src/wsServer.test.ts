@@ -51,6 +51,7 @@ import { GitCore } from "./git/Services/GitCore.ts";
 import { GitCommandError, GitManagerError } from "./git/Errors.ts";
 import { MigrationError } from "@effect/sql-sqlite-bun/SqliteMigrator";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
+import { CopilotAuthManager, type CopilotAuthManagerShape } from "./copilotAuthManager.ts";
 
 interface PendingMessages {
   queue: unknown[];
@@ -392,6 +393,7 @@ describe("WebSocket Server", () => {
       staticDir?: string;
       providerLayer?: Layer.Layer<ProviderService, never>;
       providerHealth?: ProviderHealthShape;
+      copilotAuthManager?: CopilotAuthManagerShape;
       open?: OpenShape;
       gitManager?: GitManagerShape;
       gitCore?: Pick<GitCoreShape, "listBranches" | "initRepo" | "pullCurrentBranch">;
@@ -427,6 +429,9 @@ describe("WebSocket Server", () => {
     } satisfies ServerConfigShape);
     const infrastructureLayer = providerLayer.pipe(Layer.provideMerge(persistenceLayer));
     const runtimeOverrides = Layer.mergeAll(
+      options.copilotAuthManager
+        ? Layer.succeed(CopilotAuthManager, options.copilotAuthManager)
+        : Layer.empty,
       options.gitManager ? Layer.succeed(GitManager, options.gitManager) : Layer.empty,
       options.gitCore
         ? Layer.succeed(GitCore, options.gitCore as unknown as GitCoreShape)
@@ -759,6 +764,48 @@ describe("WebSocket Server", () => {
       availableEditors: expect.any(Array),
     });
     expectAvailableEditors((response.result as { availableEditors: unknown }).availableEditors);
+  });
+
+  it("routes copilot auth websocket methods", async () => {
+    const copilotAuthManager: CopilotAuthManagerShape = {
+      initiateDeviceFlow: Effect.succeed({
+        userCode: "ABCD-1234",
+        verificationUri: "https://github.com/login/device",
+        expiresIn: 900,
+        interval: 5,
+      }),
+      pollForAccessToken: vi.fn(() => Effect.die("unused")),
+      getAccessToken: Effect.succeed(null),
+      getStatus: Effect.succeed({ authenticated: false }),
+      signOut: Effect.void,
+      getCopilotToken: Effect.succeed("copilot-token"),
+    };
+
+    server = await createTestServer({ cwd: "/test", copilotAuthManager });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+    expect(port).toBeGreaterThan(0);
+
+    const ws = await connectWs(port);
+    connections.push(ws);
+    await waitForMessage(ws);
+
+    const statusResponse = await sendRequest(ws, WS_METHODS.copilotAuthGetStatus);
+    expect(statusResponse.error).toBeUndefined();
+    expect(statusResponse.result).toEqual({ authenticated: false });
+
+    const initiateResponse = await sendRequest(ws, WS_METHODS.copilotAuthInitiateDeviceFlow);
+    expect(initiateResponse.error).toBeUndefined();
+    expect(initiateResponse.result).toEqual({
+      userCode: "ABCD-1234",
+      verificationUri: "https://github.com/login/device",
+      expiresIn: 900,
+      interval: 5,
+    });
+
+    const signOutResponse = await sendRequest(ws, WS_METHODS.copilotAuthSignOut);
+    expect(signOutResponse.error).toBeUndefined();
+    expect(signOutResponse.result).toBeUndefined();
   });
 
   it("bootstraps default keybindings file when missing", async () => {

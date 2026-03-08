@@ -73,6 +73,7 @@ import {
 import { parseBase64DataUrl } from "./imageMime.ts";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
 import { expandHomePath } from "./os-jank.ts";
+import { CopilotAuthManager } from "./copilotAuthManager.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -212,6 +213,7 @@ export type ServerCoreRuntimeServices =
 
 export type ServerRuntimeServices =
   | ServerCoreRuntimeServices
+  | CopilotAuthManager
   | GitManager
   | GitCore
   | TerminalManager
@@ -254,6 +256,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const terminalManager = yield* TerminalManager;
   const keybindingsManager = yield* Keybindings;
   const providerHealth = yield* ProviderHealth;
+  const copilotAuthManager = yield* CopilotAuthManager;
   const git = yield* GitCore;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -877,11 +880,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       }
 
       case WS_METHODS.copilotAuthInitiateDeviceFlow:
+        return yield* copilotAuthManager.initiateDeviceFlow;
+
       case WS_METHODS.copilotAuthGetStatus:
+        return yield* copilotAuthManager.getStatus;
+
       case WS_METHODS.copilotAuthSignOut:
-        return yield* new RouteRequestError({
-          message: "Copilot auth methods are not implemented yet.",
-        });
+        return yield* copilotAuthManager.signOut;
 
       case WS_METHODS.serverGetConfig:
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
