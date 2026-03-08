@@ -1,0 +1,37 @@
+.plans/17-github-copilot-provider.md
+  92978341e98d4e9c 8-11,66,68,74-77,81,83-84,98-100,104,106-107,109,119,123,135,138,140-142,145,156-280
+  edd0404425695b1a 1-7,12-65,67,69-73,78-80,82,85-97,101-103,105,108,110-118,120-122,124-134,136-137,139,143-144,146-155,281-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "4956c314ec776ab0ddcadf17f434ecf3869d1fc0",
+  "prompts": {
+    "92978341e98d4e9c": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "bf272aca-eed6-47cd-be6e-bee89c312a6f",
+        "model": "copilot/claude-sonnet-4.5"
+      },
+      "human_author": "Kamaal Farah <kamaal.f1@gmail.com>",
+      "messages": [],
+      "total_additions": 198,
+      "total_deletions": 92,
+      "accepted_lines": 153,
+      "overriden_lines": 0
+    },
+    "edd0404425695b1a": {
+      "agent_id": {
+        "tool": "github-copilot",
+        "id": "96540f5f-6e8b-4726-b7c4-211df5db35ed",
+        "model": "copilot/claude-sonnet-4.6"
+      },
+      "human_author": "Kamaal Farah <kamaal.f1@gmail.com>",
+      "messages": [],
+      "total_additions": 268,
+      "total_deletions": 83,
+      "accepted_lines": 148,
+      "overriden_lines": 0
+    }
+  }
+}
