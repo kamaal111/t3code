@@ -876,6 +876,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return yield* terminalManager.close(body);
       }
 
+      case WS_METHODS.copilotAuthInitiateDeviceFlow:
+      case WS_METHODS.copilotAuthGetStatus:
+      case WS_METHODS.copilotAuthSignOut:
+        return yield* new RouteRequestError({
+          message: "Copilot auth methods are not implemented yet.",
+        });
+
       case WS_METHODS.serverGetConfig:
         const keybindingsConfig = yield* keybindingsManager.loadConfigState;
         return {

@@ -5300,11 +5300,13 @@ function getCustomModelOptionsByProvider(settings: {
 }): Record<ProviderKind, ReadonlyArray<{ slug: string; name: string }>> {
   return {
     codex: getAppModelOptions("codex", settings.customCodexModels),
+    copilot: getAppModelOptions("copilot", []),
   };
 }
 
 const PROVIDER_ICON_BY_PROVIDER: Record<ProviderPickerKind, Icon> = {
   codex: OpenAI,
+  copilot: BotIcon,
   claudeCode: ClaudeAI,
   cursor: CursorIcon,
 };

@@ -65,6 +65,9 @@ export const WS_METHODS = {
   terminalClose: "terminal.close",
 
   // Server meta
+  copilotAuthInitiateDeviceFlow: "copilot.auth.initiateDeviceFlow",
+  copilotAuthGetStatus: "copilot.auth.getStatus",
+  copilotAuthSignOut: "copilot.auth.signOut",
   serverGetConfig: "server.getConfig",
   serverUpsertKeybinding: "server.upsertKeybinding",
 } as const;
@@ -125,6 +128,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.terminalClear, TerminalClearInput),
   tagRequestBody(WS_METHODS.terminalRestart, TerminalRestartInput),
   tagRequestBody(WS_METHODS.terminalClose, TerminalCloseInput),
+
+  // Copilot auth methods
+  tagRequestBody(WS_METHODS.copilotAuthInitiateDeviceFlow, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.copilotAuthGetStatus, Schema.Struct({})),
+  tagRequestBody(WS_METHODS.copilotAuthSignOut, Schema.Struct({})),
 
   // Server meta
   tagRequestBody(WS_METHODS.serverGetConfig, Schema.Struct({})),

@@ -2,7 +2,7 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import { ORCHESTRATION_WS_METHODS } from "./orchestration";
-import { WebSocketRequest } from "./ws";
+import { WebSocketRequest, WS_METHODS } from "./ws";
 
 const decodeWebSocketRequest = Schema.decodeUnknownEffect(WebSocketRequest);
 
@@ -54,5 +54,32 @@ it.effect("trims websocket request id and nested orchestration ids", () =>
     if (parsed.body._tag === ORCHESTRATION_WS_METHODS.getTurnDiff) {
       assert.strictEqual(parsed.body.threadId, "thread-1");
     }
+  }),
+);
+
+it.effect("accepts copilot auth websocket requests", () =>
+  Effect.gen(function* () {
+    const initiateDeviceFlow = yield* decodeWebSocketRequest({
+      id: "req-copilot-initiate",
+      body: {
+        _tag: WS_METHODS.copilotAuthInitiateDeviceFlow,
+      },
+    });
+    const getStatus = yield* decodeWebSocketRequest({
+      id: "req-copilot-status",
+      body: {
+        _tag: WS_METHODS.copilotAuthGetStatus,
+      },
+    });
+    const signOut = yield* decodeWebSocketRequest({
+      id: "req-copilot-signout",
+      body: {
+        _tag: WS_METHODS.copilotAuthSignOut,
+      },
+    });
+
+    assert.strictEqual(initiateDeviceFlow.body._tag, WS_METHODS.copilotAuthInitiateDeviceFlow);
+    assert.strictEqual(getStatus.body._tag, WS_METHODS.copilotAuthGetStatus);
+    assert.strictEqual(signOut.body._tag, WS_METHODS.copilotAuthSignOut);
   }),
 );

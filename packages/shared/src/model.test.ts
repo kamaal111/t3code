@@ -54,16 +54,26 @@ describe("resolveModelSlug", () => {
     expect(getDefaultModel()).toBe(DEFAULT_MODEL_BY_PROVIDER.codex);
     expect(getModelOptions()).toEqual(MODEL_OPTIONS_BY_PROVIDER.codex);
   });
+
+  it("returns copilot defaults and model options", () => {
+    expect(getDefaultModel("copilot")).toBe(DEFAULT_MODEL_BY_PROVIDER.copilot);
+    expect(getModelOptions("copilot")).toEqual(MODEL_OPTIONS_BY_PROVIDER.copilot);
+  });
 });
 
 describe("getReasoningEffortOptions", () => {
   it("returns codex reasoning options for codex", () => {
     expect(getReasoningEffortOptions("codex")).toEqual(["xhigh", "high", "medium", "low"]);
   });
+
+  it("returns no reasoning options for copilot", () => {
+    expect(getReasoningEffortOptions("copilot")).toEqual([]);
+  });
 });
 
 describe("getDefaultReasoningEffort", () => {
   it("returns provider-scoped defaults", () => {
     expect(getDefaultReasoningEffort("codex")).toBe("high");
+    expect(getDefaultReasoningEffort("copilot")).toBeNull();
   });
 });

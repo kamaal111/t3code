@@ -3,10 +3,17 @@ import { it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_REASONING_EFFORT_BY_PROVIDER,
+  MODEL_OPTIONS_BY_PROVIDER,
+} from "./model";
+import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_PROVIDER_KIND,
   DEFAULT_RUNTIME_MODE,
   OrchestrationGetTurnDiffInput,
   OrchestrationSession,
+  ProviderKind,
   ProjectCreateCommand,
   ThreadTurnStartCommand,
   ThreadCreatedPayload,
@@ -23,6 +30,7 @@ const decodeThreadTurnStartRequestedPayload = Schema.decodeUnknownEffect(
 );
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeThreadCreatedPayload = Schema.decodeUnknownEffect(ThreadCreatedPayload);
+const decodeProviderKind = Schema.decodeUnknownSync(ProviderKind);
 
 it.effect("parses turn diff input when fromTurnCount <= toTurnCount", () =>
   Effect.gen(function* () {
@@ -186,6 +194,30 @@ it.effect("accepts provider-scoped model options in thread.turn.start", () =>
   }),
 );
 
+it.effect("accepts copilot model options in thread.turn.start", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeThreadTurnStartCommand({
+      type: "thread.turn.start",
+      commandId: "cmd-turn-copilot",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-copilot",
+        role: "user",
+        text: "hello",
+        attachments: [],
+      },
+      provider: "copilot",
+      model: "gpt-4o",
+      modelOptions: {
+        copilot: {},
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    assert.strictEqual(parsed.provider, "copilot");
+    assert.deepStrictEqual(parsed.modelOptions?.copilot, {});
+  }),
+);
+
 it.effect(
   "decodes thread.turn-start-requested defaults for provider, runtime mode, and interaction mode",
   () =>
@@ -216,3 +248,18 @@ it.effect("decodes orchestration session runtime mode defaults", () =>
     assert.strictEqual(parsed.runtimeMode, DEFAULT_RUNTIME_MODE);
   }),
 );
+
+it("decodes copilot as a valid provider kind", () => {
+  assert.strictEqual(decodeProviderKind("copilot"), "copilot");
+});
+
+it("rejects unknown provider kinds", () => {
+  assert.throws(() => decodeProviderKind("unknown-provider"));
+});
+
+it("keeps codex defaults while exposing copilot defaults", () => {
+  assert.strictEqual(DEFAULT_PROVIDER_KIND, "codex");
+  assert.ok(MODEL_OPTIONS_BY_PROVIDER.copilot.length > 0);
+  assert.strictEqual(DEFAULT_MODEL_BY_PROVIDER.copilot, "gpt-4o");
+  assert.strictEqual(DEFAULT_REASONING_EFFORT_BY_PROVIDER.copilot, null);
+});
